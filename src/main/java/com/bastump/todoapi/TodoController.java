@@ -8,6 +8,7 @@ import static spark.Spark.put;
 import java.util.UUID;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 public class TodoController {
 
@@ -27,8 +28,14 @@ public class TodoController {
 		// Create a new todo
 		put("/", (req, res) -> {
 			res.type("application/json");
-			Todo todo = todoService.createTodo(req.queryParams("title"));
-			return new Gson().toJson(todo);
+			JsonObject requestBody = new Gson().fromJson(req.body(), JsonObject.class);
+			if (requestBody.isJsonObject()) {
+				Todo todo = todoService.createTodo(requestBody);
+				return new Gson().toJson(todo);
+			} else {
+				res.status(422);
+				return new Gson().toJson("Request input not a valid Json: " + req.body());
+			}
 		});
 
 		// Get todo by id
@@ -66,7 +73,7 @@ public class TodoController {
 			if (todo != null) {
 				todoService.deleteTodo(id);
 				res.status(200);
-				return new Gson().toJson("user deleted");
+				return new Gson().toJson("{\"id\": id.toString()}");
 			} else {
 				res.status(400);
 				return new Gson().toJson("Todo with id " + id.toString() + " not found");
