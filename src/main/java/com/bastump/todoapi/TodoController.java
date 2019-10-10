@@ -16,13 +16,16 @@ public class TodoController {
 		// List all todos
 		get("/", (req, res) -> {
 			res.type("application/json");
-			return new Gson().toJsonTree(todoService.getAllTodos());
-		});
-
-		// List all completed todos
-		get("/?=completed", (req, res) -> {
-			res.type("application/json");
-			return new Gson().toJsonTree(todoService.getCompletedTodos());
+			if (req.queryParams("q") != null) {
+				String param = req.queryParams("q");
+				if (param.equals("completed")) {
+					return new Gson().toJsonTree(todoService.getCompletedTodos());
+				} else {
+					throw new Exception("Error - unknown query parameter '" + param + "'");
+				}
+			} else {
+				return new Gson().toJsonTree(todoService.getAllTodos());
+			}
 		});
 
 		// Create a new todo
@@ -34,14 +37,14 @@ public class TodoController {
 				return new Gson().toJson(todo);
 			} else {
 				res.status(422);
-				return new Gson().toJson("Request input not a valid Json: " + req.body());
+				return new Gson().toJson("Error - request input not a valid json: " + req.body());
 			}
 		});
 
 		// Get todo by id
-		get("/todos/:id", (req, res) -> {
+		get("/todo/:id", (req, res) -> {
 			res.type("application/json");
-			UUID id = UUID.fromString(req.params(":id"));
+			UUID id = UUID.fromString(req.params("id"));
 			Todo todo = todoService.getTodo(id);
 			if (todo != null) {
 				return new Gson().toJson(todo);
@@ -52,12 +55,14 @@ public class TodoController {
 		});
 
 		// Update (Complete) todo
-		patch("todos/:id", (req, res) -> {
+		patch("todo/:id", (req, res) -> {
 			res.type("application/json");
+			JsonObject requestBody = new Gson().fromJson(req.body(), JsonObject.class);
+			boolean updateStatus = requestBody.get("completed").getAsBoolean();
 			UUID id = UUID.fromString(req.params(":id"));
 			Todo todo = todoService.getTodo(id);
 			if (todo != null) {
-				todo.setCompleted(true);
+				todo.setCompleted(updateStatus);
 				return new Gson().toJson(todo);
 			} else {
 				res.status(400);
@@ -66,18 +71,29 @@ public class TodoController {
 		});
 
 		// Delete todo
-		delete("/todos/:id", (req, res) -> {
+		delete("/todo/:id", (req, res) -> {
 			res.type("application/json");
 			UUID id = UUID.fromString(req.params(":id"));
 			Todo todo = todoService.getTodo(id);
 			if (todo != null) {
 				todoService.deleteTodo(id);
 				res.status(200);
-				return new Gson().toJson("{\"id\": id.toString()}");
+				JsonObject result = new JsonObject();
+				result.addProperty("id", id.toString());
+				return result.toString();
 			} else {
 				res.status(400);
 				return new Gson().toJson("Todo with id " + id.toString() + " not found");
 			}
+		});
+
+		// Delete all todos for cleanup purposes
+		delete("/", (req, res) -> {
+			res.type("application/json");
+			int count = todoService.getAllTodos().size();
+			todoService.deleteAll();
+			res.status(200);
+			return new Gson().toJson("Deleted all " + String.valueOf(count) + "items.");
 		});
 	}
 }

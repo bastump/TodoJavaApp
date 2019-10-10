@@ -10,7 +10,7 @@ import com.google.gson.JsonObject;
 
 public class TodoService {
 
-	private Map<UUID, Todo> todos = new HashMap<>();
+	public static Map<UUID, Todo> todos = new HashMap<>();
 
 	public Collection<Todo> getAllTodos() {
 		return todos.values();
@@ -43,13 +43,17 @@ public class TodoService {
 
 	}
 
-	public Todo completeTodo(UUID id) {
+	public Todo updateTodo(UUID id, boolean completed) {
 		Todo todo = todos.get(id);
-		todo.setCompleted(true);
+		todo.setCompleted(completed);
 		return todo;
 	}
 
 	public void deleteTodo(UUID id) {
 		todos.remove(id);
+	}
+
+	public void deleteAll() {
+		todos.clear();
 	}
 }

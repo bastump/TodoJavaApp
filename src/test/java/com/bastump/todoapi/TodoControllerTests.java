@@ -4,20 +4,18 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.UnsupportedEncodingException;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.List;
 
-import org.apache.http.NameValuePair;
-import org.apache.http.message.BasicNameValuePair;
-import org.junit.jupiter.api.AfterAll;
+import org.apache.http.HttpResponse;
+import org.apache.http.HttpStatus;
+import org.apache.http.client.methods.HttpDelete;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPatch;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -26,130 +24,215 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import spark.Spark;
 import spark.utils.IOUtils;
 
 public class TodoControllerTests {
 
 	@BeforeAll
-	public static void beforeClass() throws InterruptedException {
+	public static void init() throws InterruptedException {
 		Main.main(null);
-		Thread.sleep(5000); // wait for embedded server to start
+		Thread.sleep(1500); // wait for embedded server to start
 	}
 
-	@AfterAll
-	public static void afterClass() {
-		Spark.stop(); // stop embedded server
+	@AfterEach
+	public void cleanup() throws InterruptedException {
+		request("DELETE", "/"); // clear all data
 	}
 
 	@Test
-	public void addTodoTest() {
+	public void addTodoTest() throws InterruptedException {
+		JsonObject buymilk = new JsonObject();
+		buymilk.addProperty("title", "Buy milk");
+		buymilk.addProperty("completed", false);
+		String jsonString = request("PUT", "/", buymilk);
+		JsonObject responseJson = new Gson().fromJson(jsonString, JsonObject.class);
+		assertTrue(responseJson.isJsonObject());
+		assertEquals(3, responseJson.size());
+	}
+
+	@Test
+	public void getTodoListTest() {
 		JsonObject buymilk = new JsonObject();
 		buymilk.addProperty("title", "Buy milk");
 		buymilk.addProperty("completed", false);
 		JsonObject buyapples = new JsonObject();
 		buyapples.addProperty("title", "Buy apples");
 		buyapples.addProperty("completed", false);
-		String jsonString = request("PUT", "/", buymilk);
+		request("PUT", "/", buymilk);
 		request("PUT", "/", buyapples);
-		JsonObject responseJson = new Gson().fromJson(jsonString, JsonObject.class);
-		assertTrue(responseJson.isJsonObject());
-		assertEquals(responseJson.size(), 3);
-	}
-
-	@Test
-	public void getTodoListTest() {
 		String jsonString = request("GET", "/");
-		System.out.println();
-		System.out.println(jsonString.toString());
 		JsonArray responseJson = new Gson().fromJson(jsonString, JsonArray.class);
+		assertEquals(2, responseJson.size());
 		for (JsonElement element : responseJson) {
 			JsonObject json = element.getAsJsonObject();
 			assertTrue(json.get("title").getAsString().equals("Buy milk")
 					|| json.get("title").getAsString().equals("Buy apples"));
 			assertEquals(json.get("completed").getAsBoolean(), false);
-			assertEquals(responseJson.size(), 2);
 		}
+	}
 
+	@Test
+	public void getCompletedListTest() throws InterruptedException {
+		JsonObject buycookies = new JsonObject();
+		buycookies.addProperty("title", "Buy cookies");
+		buycookies.addProperty("completed", false);
+		JsonObject buyeggs = new JsonObject();
+		buyeggs.addProperty("title", "Buy eggs");
+		buyeggs.addProperty("completed", true);
+		request("PUT", "/", buycookies);
+		request("PUT", "/", buyeggs);
+		String jsonString = request("GET", "/?q=completed");
+		JsonArray responseJson = new Gson().fromJson(jsonString, JsonArray.class);
+		assertEquals(1, responseJson.size());
+		for (JsonElement element : responseJson) {
+			JsonObject json = element.getAsJsonObject();
+			assertTrue(json.get("title").getAsString().equals("Buy eggs"));
+			assertEquals(json.get("completed").getAsBoolean(), true);
+		}
+	}
+
+	@Test
+	public void getAndDeleteTodoTest() {
+		boolean checked = false;
+		JsonObject buylemons = new JsonObject();
+		buylemons.addProperty("title", "Buy lemons");
+		buylemons.addProperty("completed", false);
+		request("PUT", "/", buylemons);
+		String todoList = request("GET", "/");
+		JsonArray responseList = new Gson().fromJson(todoList, JsonArray.class);
+		assertEquals(1, responseList.size());
+		for (JsonElement element : responseList) {
+			JsonObject json = element.getAsJsonObject();
+			if (json.get("title").getAsString().equals("Buy lemons")) {
+				String lemonsId = json.get("id").getAsString();
+				String jsonString = request("GET", "/todo/" + lemonsId);
+				JsonObject responseJson = new Gson().fromJson(jsonString, JsonObject.class);
+				assertTrue(responseJson.get("title").getAsString().equals("Buy lemons"));
+				assertEquals(3, responseJson.size());
+				checked = true;
+
+				// also check delete method
+				String deleteResponse = request("DELETE", "/todo/" + lemonsId);
+				assertEquals("{\"id\":\"" + lemonsId + "\"}", deleteResponse);
+			}
+		}
+		assertTrue(checked);
+	}
+
+	@Test
+	public void getPatchTodoTest() {
+		JsonObject buymilk = new JsonObject();
+		buymilk.addProperty("title", "Buy milk");
+		buymilk.addProperty("completed", false);
+		request("PUT", "/", buymilk);
+		String todoList = request("GET", "/");
+		JsonArray responseList = new Gson().fromJson(todoList, JsonArray.class);
+		assertEquals(1, responseList.size());
+		for (JsonElement element : responseList) {
+			JsonObject json = element.getAsJsonObject();
+			String milkId = json.get("id").getAsString();
+			String jsonString = request("GET", "/todo/" + milkId);
+			JsonObject responseJson = new Gson().fromJson(jsonString, JsonObject.class);
+			assertEquals(false, responseJson.get("completed").getAsBoolean());
+
+			JsonObject inputJson = new JsonObject();
+			inputJson.addProperty("id", milkId);
+			inputJson.addProperty("completed", true);
+			String patchResponse = request("PATCH", "/todo/" + milkId, inputJson);
+			JsonObject patchJsonResponse = new Gson().fromJson(patchResponse, JsonObject.class);
+			assertEquals(true, patchJsonResponse.get("completed").getAsBoolean());
+			assertEquals("{\"id\":\"" + milkId + "\"," + "\"title\":\"Buy milk\",\"completed\":true}", patchResponse);
+		}
 	}
 
 	private String request(String method, String path) {
-		try {
-			URL url = new URL("http://localhost:4567" + path);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestMethod(method);
-			connection.setDoOutput(true);
-			connection.connect();
-			String jsonOutput = IOUtils.toString(connection.getInputStream());
-			return jsonOutput;
-		} catch (IOException e) {
-			e.printStackTrace();
-			fail("Sending request failed: " + e.getMessage());
-			return null;
-		}
-	}
-
-	private String request(String method, String path, String paramName, String paramValue) {
-		try {
-			URL url = new URL("http://localhost:4567" + path);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestMethod(method);
-			connection.setDoOutput(true);
-			List<NameValuePair> params = new ArrayList<NameValuePair>();
-			params.add(new BasicNameValuePair(paramName, paramValue));
-			OutputStream os = connection.getOutputStream();
-			BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-			writer.write(getQuery(params));
-			writer.flush();
-			writer.close();
-			os.close();
-
-			connection.connect();
-			String jsonOutput = IOUtils.toString(connection.getInputStream());
-			return jsonOutput;
-		} catch (IOException e) {
-			e.printStackTrace();
-			fail("Sending request failed: " + e.getMessage());
-			return null;
-		}
+		return request(method, path, null);
 	}
 
 	private String request(String method, String path, JsonObject input) {
-		try {
-			URL url = new URL("http://localhost:4567" + path);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestMethod(method);
-			connection.setDoOutput(true);
-			OutputStream os = connection.getOutputStream();
-			os.write(input.toString().getBytes("UTF-8"));
-			os.close();
+		if (method == "GET") {
+			return getRequest(method, path, input);
+		} else if (method == "PUT") {
+			return putRequest(method, path, input);
+		} else if (method == "PATCH") {
+			return patchRequest(method, path, input);
+		} else if (method == "DELETE") {
+			return deleteRequest(method, path, input);
+		}
+		fail("Error - invalid method request :" + method);
+		return null;
+	}
 
-			connection.connect();
-			String jsonOutput = IOUtils.toString(connection.getInputStream());
-			return jsonOutput;
+	private String getRequest(String method, String path, JsonObject input) {
+		try {
+			CloseableHttpClient client = HttpClientBuilder.create().build();
+			HttpGet request = new HttpGet("http://localhost:4567" + path);
+			HttpResponse response = client.execute(request);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				return IOUtils.toString(response.getEntity().getContent());
+			} else {
+				fail("Error - " + response.getStatusLine().getReasonPhrase());
+			}
 		} catch (IOException e) {
 			e.printStackTrace();
 			fail("Sending request failed: " + e.getMessage());
-			return null;
 		}
+		return null;
 	}
 
-	private String getQuery(List<NameValuePair> params) throws UnsupportedEncodingException {
-		StringBuilder result = new StringBuilder();
-		boolean first = true;
-
-		for (NameValuePair pair : params) {
-			if (first)
-				first = false;
-			else
-				result.append("&");
-
-			result.append(URLEncoder.encode(pair.getName(), "UTF-8"));
-			result.append("=");
-			result.append(URLEncoder.encode(pair.getValue(), "UTF-8"));
+	private String putRequest(String method, String path, JsonObject input) {
+		try {
+			CloseableHttpClient client = HttpClientBuilder.create().build();
+			HttpPut request = new HttpPut("http://localhost:4567" + path);
+			request.addHeader("Content-Type", "application/json");
+			request.setEntity(new StringEntity(input.toString()));
+			HttpResponse response = client.execute(request);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				return IOUtils.toString(response.getEntity().getContent());
+			} else {
+				fail("Error - " + response.getStatusLine().getReasonPhrase());
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+			fail("Sending request failed: " + e.getMessage());
 		}
+		return null;
+	}
 
-		return result.toString();
+	private String patchRequest(String method, String path, JsonObject input) {
+		try {
+			CloseableHttpClient client = HttpClientBuilder.create().build();
+			HttpPatch request = new HttpPatch("http://localhost:4567" + path);
+			request.addHeader("Content-Type", "application/json");
+			request.setEntity(new StringEntity(input.toString()));
+			HttpResponse response = client.execute(request);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				return IOUtils.toString(response.getEntity().getContent());
+			} else {
+				fail("Error - " + response.getStatusLine().getReasonPhrase());
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+			fail("Sending request failed: " + e.getMessage());
+		}
+		return null;
+	}
+
+	private String deleteRequest(String method, String path, JsonObject input) {
+		try {
+			CloseableHttpClient client = HttpClientBuilder.create().build();
+			HttpDelete request = new HttpDelete("http://localhost:4567" + path);
+			HttpResponse response = client.execute(request);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				return IOUtils.toString(response.getEntity().getContent());
+			} else {
+				fail("Error - " + response.getStatusLine().getReasonPhrase());
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+			fail("Sending request failed: " + e.getMessage());
+		}
+		return null;
 	}
 
 }
