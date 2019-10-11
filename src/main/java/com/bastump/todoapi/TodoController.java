@@ -93,7 +93,7 @@ public class TodoController {
 			int count = todoService.getAllTodos().size();
 			todoService.deleteAll();
 			res.status(200);
-			return new Gson().toJson("Deleted all " + String.valueOf(count) + "items.");
+			return new Gson().toJson("Deleted all " + String.valueOf(count) + " items.");
 		});
 	}
 }
