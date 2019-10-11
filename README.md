@@ -8,5 +8,5 @@
 
 `java -jar targets/TodoJavaApp-1.0-jar-with-dependencies.jar`
 
-#### In separate terminal:
+#### In separate terminal
 `./todoList.sh`
