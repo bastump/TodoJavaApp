@@ -10,7 +10,6 @@ linux: `sudo apt-get install jq`
 
 mac: `brew install jq`
 
-
 ### Starting
 `java -jar targets/TodoJavaApp-1.0-jar-with-dependencies.jar`
 
